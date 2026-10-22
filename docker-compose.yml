@@ -1,0 +1,28 @@
+# docker compose up --build
+# Orders API    -> http://localhost:5102/swagger (set ASPNETCORE_ENVIRONMENT=Development to enable Swagger)
+# Inventory API -> http://localhost:5101
+services:
+  inventory:
+    build:
+      context: .
+      dockerfile: docker/Inventory.Dockerfile
+    environment:
+      Urls: http://+:8080
+      ServiceAuth__ApiKey: dev-secret-key-change-me
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5101:8080"
+
+  orders:
+    build:
+      context: .
+      dockerfile: docker/Orders.Dockerfile
+    environment:
+      Urls: http://+:8080
+      ServiceAuth__ApiKey: dev-secret-key-change-me
+      Services__Inventory__BaseUrl: http://inventory:8080
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - "5102:8080"
+    depends_on:
+      - inventory

@@ -1,0 +1,73 @@
+### Try the APIs from VS Code (REST Client extension) or Rider / Visual Studio.
+### Start both services first:
+###   dotnet run --project src/Inventory.Api      (http://localhost:5101)
+###   dotnet run --project src/Orders.Api         (http://localhost:5102)
+
+@orders = http://localhost:5102
+@inventory = http://localhost:5101
+@apiKey = dev-secret-key-change-me
+
+### 1. Inventory (internal service - needs the API key)
+GET {{inventory}}/api/inventory
+X-Api-Key: {{apiKey}}
+
+### 2. Without the key -> 401 ProblemDetails (middleware short-circuit)
+GET {{inventory}}/api/inventory
+
+### 3. Create an order (idempotent: run it twice, you get the SAME order back)
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-001
+X-Correlation-ID: my-trace-123
+
+{
+  "customerId": "cust-42",
+  "items": [
+    { "sku": "SKU-1001", "quantity": 2 },
+    { "sku": "SKU-1002", "quantity": 1 }
+  ]
+}
+
+### 4. Same key, different body -> 409 Conflict
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+Idempotency-Key: demo-key-001
+
+{ "customerId": "cust-42", "items": [ { "sku": "SKU-1001", "quantity": 9 } ] }
+
+### 5. Out of stock -> 409, and the successful lines are released (saga compensation)
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+
+{
+  "customerId": "cust-42",
+  "items": [
+    { "sku": "SKU-1001", "quantity": 1 },
+    { "sku": "SKU-1004", "quantity": 1 }
+  ]
+}
+
+### 6. Validation error -> 400 ProblemDetails
+POST {{orders}}/api/v1/orders
+Content-Type: application/json
+
+{ "customerId": "", "items": [] }
+
+### 7. List orders (paging + filter)
+GET {{orders}}/api/v1/orders?page=1&pageSize=10&status=Confirmed
+
+### 8. Cancel an order (replace the id) - stock is returned
+DELETE {{orders}}/api/v1/orders/00000000-0000-0000-0000-000000000000
+
+### 9. Diagnostics: circuit breaker state + background events processed
+GET {{orders}}/api/v1/diagnostics
+
+### ---- Resilience experiments ----
+
+### 10. Make Inventory flaky: 70% failures + 300ms latency, then create orders and watch Orders' logs (retries -> circuit opens)
+POST {{inventory}}/admin/chaos?failureRate=0.7&latencyMs=300
+X-Api-Key: {{apiKey}}
+
+### 11. Heal it
+POST {{inventory}}/admin/chaos?failureRate=0&latencyMs=0
+X-Api-Key: {{apiKey}}
