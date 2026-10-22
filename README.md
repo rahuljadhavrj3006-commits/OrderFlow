@@ -1,5 +1,7 @@
 # OrderFlow
-   ![CI](https://github.com/<your-username>/OrderFlow/actions/workflows/ci.yml/badge.svg)
+
+![CI](https://github.com/rahuljadhavrj3006-commits/OrderFlow/actions/workflows/ci.yml/badge.svg)
+
 A hands-on **.NET 8** portfolio project that demonstrates the concurrency, API and microservice skills backend teams look for:
 **threads / `Task` / `async`-`await`**, **REST APIs**, **custom middleware**, and **resilient service-to-service communication**.
 
