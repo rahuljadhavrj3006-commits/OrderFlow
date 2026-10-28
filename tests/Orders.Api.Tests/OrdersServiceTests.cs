@@ -61,7 +61,7 @@ public class OrdersServiceTests
 
         Assert.Equal(OrderStatus.Confirmed, order.Status);
         Assert.Equal(2, inventory.ReserveCalls);
-        Assert.NotNull(repo.Get(order.Id));
+        Assert.NotNull(await repo.GetAsync(order.Id));
         Assert.Single(publisher.Events);
     }
 
@@ -75,7 +75,7 @@ public class OrdersServiceTests
             service.CreateAsync(null, Request(("A", 1), ("B", 1)), CancellationToken.None));
 
         Assert.Equal(1, inventory.ReleaseCalls);                       // compensation ran
-        Assert.Equal(0, repo.Query(null, 1, 10).TotalCount);           // nothing persisted
+        Assert.Equal(0, (await repo.QueryAsync(null, 1, 10)).TotalCount);           // nothing persisted
         Assert.Empty(publisher.Events);                                // nothing announced
     }
 
@@ -90,7 +90,7 @@ public class OrdersServiceTests
 
         Assert.Single(results.Select(o => o.Id).Distinct());
         Assert.Equal(1, inventory.ReserveCalls);
-        Assert.Equal(1, repo.Query(null, 1, 10).TotalCount);
+        Assert.Equal(1, (await repo.QueryAsync(null, 1, 10)).TotalCount);
         Assert.Single(publisher.Events);
     }
 
@@ -158,9 +158,9 @@ public class OrdersServiceTests
     }
 
     [Fact]
-    public void Unknown_order_is_not_found()
+    public async Task Unknown_order_is_not_found()
     {
         var (service, _, _, _) = Create();
-        Assert.Throws<NotFoundException>(() => service.Get(Guid.NewGuid()));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetAsync(Guid.NewGuid(), CancellationToken.None));
     }
 }

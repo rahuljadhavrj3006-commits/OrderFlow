@@ -4,27 +4,32 @@ namespace Orders.Api;
 
 public interface IOrderRepository
 {
-    void Add(Order order);
-    Order? Get(Guid id);
+    Task AddAsync(Order order, CancellationToken ct = default);
+    Task<Order?> GetAsync(Guid id, CancellationToken ct = default);
 
-    /// <summary>Optimistic update: succeeds only if the stored order is still <paramref name="comparison"/>.</summary>
-    bool TryUpdate(Order newValue, Order comparison);
+    /// <summary>Replaces the order only if the stored version still equals comparison.Version.</summary>
+    Task<bool> TryUpdateAsync(Order newValue, Order comparison, CancellationToken ct = default);
 
-    PagedResult<Order> Query(OrderStatus? status, int page, int pageSize);
+    Task<PagedResult<Order>> QueryAsync(OrderStatus? status, int page, int pageSize, CancellationToken ct = default);
 }
 
-/// <summary>In-memory stand-in for a database (swap for EF Core + SQL later without touching the service).</summary>
 public sealed class InMemoryOrderRepository : IOrderRepository
 {
     private readonly ConcurrentDictionary<Guid, Order> _orders = new();
 
-    public void Add(Order order) => _orders[order.Id] = order;
+    public Task AddAsync(Order order, CancellationToken ct = default)
+    {
+        _orders[order.Id] = order;
+        return Task.CompletedTask;
+    }
 
-    public Order? Get(Guid id) => _orders.TryGetValue(id, out var order) ? order : null;
+    public Task<Order?> GetAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<Order?>(_orders.TryGetValue(id, out var order) ? order : null);
 
-    public bool TryUpdate(Order newValue, Order comparison) => _orders.TryUpdate(newValue.Id, newValue, comparison);
+    public Task<bool> TryUpdateAsync(Order newValue, Order comparison, CancellationToken ct = default) =>
+        Task.FromResult(_orders.TryUpdate(newValue.Id, newValue, comparison));
 
-    public PagedResult<Order> Query(OrderStatus? status, int page, int pageSize)
+    public Task<PagedResult<Order>> QueryAsync(OrderStatus? status, int page, int pageSize, CancellationToken ct = default)
     {
         var query = _orders.Values.AsEnumerable();
         if (status is not null)
@@ -34,6 +39,6 @@ public sealed class InMemoryOrderRepository : IOrderRepository
 
         var all = query.OrderByDescending(o => o.CreatedAt).ToList();
         var items = all.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        return new PagedResult<Order>(items, page, pageSize, all.Count);
+        return Task.FromResult(new PagedResult<Order>(items, page, pageSize, all.Count));
     }
 }

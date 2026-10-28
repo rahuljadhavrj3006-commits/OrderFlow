@@ -3,9 +3,14 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OrderFlow.Shared;
+using Microsoft.EntityFrameworkCore;
+using Orders.Api.Data;
 using Orders.Api;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var dbPath = Path.Combine(builder.Environment.ContentRootPath, "orders.db");
+builder.Services.AddDbContext<OrdersDbContext>(o => o.UseSqlite($"Data Source={dbPath}"));
 
 // ---- Resilient typed HttpClient to the Inventory microservice ----
 builder.Services.AddOrderFlowResilience(builder.Configuration);
@@ -28,7 +33,7 @@ builder.Services.AddHostedService<OrderEventProcessor>();
 
 // ---- Application services. Lifetimes are deliberate: state lives in singletons; OrdersService is scoped
 // because it depends on a typed HttpClient (a singleton must not capture one: it would never see DNS changes).
-builder.Services.AddSingleton<IOrderRepository, InMemoryOrderRepository>();
+builder.Services.AddScoped<IOrderRepository, EfOrderRepository>();
 builder.Services.AddSingleton<IdempotencyStore>();
 builder.Services.AddScoped<OrdersService>();
 
@@ -88,10 +93,11 @@ orders.MapPost("/", async (
     return Results.Created($"/api/v1/orders/{order.Id}", order);
 }).RequireRateLimiting("create-order");
 
-orders.MapGet("/{id:guid}", (Guid id, OrdersService service) => Results.Ok(service.Get(id)));
+orders.MapGet("/{id:guid}", async (Guid id, OrdersService service, CancellationToken ct) =>
+    Results.Ok(await service.GetAsync(id, ct)));
 
-orders.MapGet("/", (OrdersService service, OrderStatus? status, int page = 1, int pageSize = 20) =>
-    Results.Ok(service.Query(status, page, pageSize)));
+orders.MapGet("/", async (OrdersService service, OrderStatus? status, CancellationToken ct, int page = 1, int pageSize = 20) =>
+    Results.Ok(await service.QueryAsync(status, page, pageSize, ct)));
 
 orders.MapDelete("/{id:guid}", async (Guid id, OrdersService service, CancellationToken ct) =>
     Results.Ok(await service.CancelAsync(id, ct)));

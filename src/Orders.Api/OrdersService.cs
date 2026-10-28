@@ -55,22 +55,23 @@ public sealed class OrdersService(
             throw;
         }
 
-        var order = new Order(orderId, request.CustomerId!.Trim(), items, OrderStatus.Confirmed, DateTimeOffset.UtcNow);
-        repository.Add(order);
+        var order = new Order(orderId, request.CustomerId!.Trim(), items, OrderStatus.Confirmed, DateTimeOffset.UtcNow, Guid.NewGuid());
+        await repository.AddAsync(order);
         await events.PublishAsync(new OrderEvent(orderId, OrderEventType.Confirmed, order.CreatedAt), ct);
 
         logger.LogInformation("Order {OrderId} confirmed with {LineCount} line(s)", orderId, items.Count);
         return order;
     }
 
-    public Order Get(Guid id) =>
-        repository.Get(id) ?? throw new NotFoundException($"Order {id} was not found.");
+    public async Task<Order> GetAsync(Guid id, CancellationToken ct)
+    =>
+        await repository.GetAsync(id, ct) ?? throw new NotFoundException($"Order {id} was not found.");
 
-    public PagedResult<Order> Query(OrderStatus? status, int page, int pageSize)
+    public async Task<PagedResult<Order>> QueryAsync(OrderStatus? status, int page, int pageSize, CancellationToken ct)
     {
         if (page < 1) throw new DomainValidationException("page must be >= 1.");
         if (pageSize is < 1 or > 100) throw new DomainValidationException("pageSize must be between 1 and 100.");
-        return repository.Query(status, page, pageSize);
+        return await repository.QueryAsync(status, page, pageSize, ct);
     }
 
     /// <summary>Idempotent cancel: cancelling twice is not an error. Uses optimistic concurrency instead of a lock.</summary>
@@ -78,14 +79,14 @@ public sealed class OrdersService(
     {
         while (true)
         {
-            var order = Get(id);
+            var order = await GetAsync(id, ct);
             if (order.Status == OrderStatus.Cancelled)
             {
                 return order;
             }
 
-            var cancelled = order with { Status = OrderStatus.Cancelled };
-            if (!repository.TryUpdate(cancelled, order))
+            var cancelled = order with { Status = OrderStatus.Cancelled, Version = Guid.NewGuid() };
+            if (!await repository.TryUpdateAsync(cancelled, order, ct))
             {
                 continue; // someone changed it between our read and write: re-read and retry
             }
