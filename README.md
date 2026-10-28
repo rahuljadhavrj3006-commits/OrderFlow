@@ -81,7 +81,7 @@ docker compose up --build
 
 ## Design decisions (and the trade-offs)
 
-- **In-memory storage.** Keeps the focus on concurrency and architecture. The repository interface makes swapping in EF Core + SQL Server a local change.
+- **EF Core + SQLite for Orders** (Inventory is still in-memory). A GUID \Version` column is the optimistic-concurrency token, which works on SQLite and SQL Server. Moving to SQL Server or Azure SQL is a one-line provider change.
 - **Hand-rolled resilience instead of Polly / `Microsoft.Extensions.Http.Resilience`.** Deliberate: the project is meant to *show how the patterns work*. In production I would use the library.
 - **Retries only on idempotent operations.** Reservations are keyed by `(orderId, sku)`, so a retried request can't double-deduct stock.
 - **Idempotency work ignores the first caller's `CancellationToken`.** If the client disconnects mid-saga, we still want to finish or compensate cleanly. The trade-off is a request that can't be aborted by its caller.
@@ -90,7 +90,9 @@ docker compose up --build
 
 ## Known limitations / next steps
 
-- [ ] Replace in-memory stores with EF Core + SQL Server (optimistic concurrency with `rowversion`)
+- [x] Orders stored with EF Core + SQLite, with optimistic concurrency
+- [ ] Inventory on EF Core with an atomic `UPDATE ... WHERE Quantity >= @n`
+- [ ] Switch the provider to SQL Server / Azure SQL
 - [ ] Idempotency keys need a TTL / persistent store (they currently live for the process lifetime)
 - [ ] Transactional outbox + a real broker (Azure Service Bus / RabbitMQ) instead of the in-process channel
 - [ ] API gateway (YARP) in front of both services
