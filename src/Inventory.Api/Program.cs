@@ -31,8 +31,8 @@ app.UseMiddleware<ChaosMiddleware>();         // fault injection (after auth so 
 // ---- Endpoints ----
 var inventory = app.MapGroup("/api/inventory").WithTags("Inventory");
 
-inventory.MapGet("/", (IInventoryStore store, CancellationToken ct) =>
-    Results.Ok(store.AllAsync(ct)));
+inventory.MapGet("/", async (IInventoryStore store, CancellationToken ct) =>
+    Results.Ok(await store.AllAsync(ct)));
 
 inventory.MapGet("/{sku}", async (string sku, IInventoryStore store, CancellationToken ct) =>
     Results.Ok(await store.GetAsync(sku, ct)));
