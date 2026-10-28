@@ -1,16 +1,23 @@
 using Inventory.Api;
+using Inventory.Api.Data;
+using Microsoft.EntityFrameworkCore;
 using OrderFlow.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<InventoryStore>();
+var dbPath = Path.Combine(builder.Environment.ContentRootPath, "inventory.db");
+builder.Services.AddDbContext<InventoryDbContext>(o => o.UseSqlite($"Data Source={dbPath}"));
+builder.Services.AddScoped<IInventoryStore, EfInventoryStore>();
 builder.Services.AddSingleton<ChaosSettings>();
 builder.Services.AddHealthChecks();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
-
+using (var scope = app.Services.CreateScope())
+{
+    scope.ServiceProvider.GetRequiredService<InventoryDbContext>().Database.Migrate();
+}
 // ---- Middleware pipeline: ORDER MATTERS. Requests flow top -> bottom, responses bottom -> top. ----
 app.UseOrderFlowCore();                       // correlation id -> timing -> exception handling
 if (app.Environment.IsDevelopment())
@@ -24,23 +31,20 @@ app.UseMiddleware<ChaosMiddleware>();         // fault injection (after auth so 
 // ---- Endpoints ----
 var inventory = app.MapGroup("/api/inventory").WithTags("Inventory");
 
-inventory.MapGet("/", (InventoryStore store) =>
-    Results.Ok(store.All().Select(i => new StockDto(i.Sku, i.Name, i.Available))));
+inventory.MapGet("/", (IInventoryStore store, CancellationToken ct) =>
+    Results.Ok(store.AllAsync(ct)));
 
-inventory.MapGet("/{sku}", (string sku, InventoryStore store) =>
-{
-    var item = store.Get(sku);
-    return Results.Ok(new StockDto(item.Sku, item.Name, item.Available));
-});
+inventory.MapGet("/{sku}", async (string sku, IInventoryStore store, CancellationToken ct) =>
+    Results.Ok(await store.GetAsync(sku, ct)));
 
-inventory.MapPost("/{sku}/reserve", (string sku, ReserveRequest request, InventoryStore store) =>
+inventory.MapPost("/{sku}/reserve", async (string sku, ReserveRequest request, IInventoryStore store, CancellationToken ct) =>
 {
-    var remaining = store.Reserve(sku, request.OrderId, request.Quantity);
+    var remaining = await store.ReserveAsync(sku, request.OrderId, request.Quantity, ct);
     return Results.Ok(new ReserveResponse(true, null, remaining));
 });
 
-inventory.MapPost("/reservations/{orderId:guid}/release", (Guid orderId, InventoryStore store) =>
-    Results.Ok(new { orderId, released = store.Release(orderId) }));
+inventory.MapPost("/reservations/{orderId:guid}/release", async (Guid orderId, IInventoryStore store, CancellationToken ct) =>
+    Results.Ok(new { orderId, released = await store.ReleaseAsync(orderId, ct) }));
 
 app.MapPost("/admin/chaos", (double? failureRate, int? latencyMs, ChaosSettings chaos) =>
 {
